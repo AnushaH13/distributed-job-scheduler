@@ -1,6 +1,8 @@
 package config
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -162,8 +164,15 @@ func TestBlankValueUsesDefault(t *testing.T) {
 }
 
 func TestUnknownService(t *testing.T) {
-	if _, err := LoadFrom("billing", env(nil)); err == nil {
-		t.Fatal("expected an error for an unknown service")
+	_, err := LoadFrom("billing", env(nil))
+	if !errors.Is(err, ErrUnknownService) {
+		t.Fatalf("err = %v, want it to wrap ErrUnknownService", err)
+	}
+
+	// Wrapping with %w keeps the original error findable.
+	wrapped := fmt.Errorf("load configuration: %w", err)
+	if !errors.Is(wrapped, ErrUnknownService) {
+		t.Errorf("errors.Is lost ErrUnknownService through wrapping: %v", wrapped)
 	}
 }
 
@@ -176,11 +185,16 @@ func TestSecretsNeverPrint(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+	jsonBytes, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
 	outputs := map[string]string{
-		"%v":      fmt.Sprintf("%v", cfg),
-		"%+v":     fmt.Sprintf("%+v", cfg),
-		"%#v":     fmt.Sprintf("%#v", cfg),
-		"Summary": cfg.Summary(),
+		"%v":           fmt.Sprintf("%v", cfg),
+		"%+v":          fmt.Sprintf("%+v", cfg),
+		"%#v":          fmt.Sprintf("%#v", cfg),
+		"json.Marshal": string(jsonBytes),
 	}
 	for format, out := range outputs {
 		for _, secret := range []string{"hunter2", "redis-pass-123"} {

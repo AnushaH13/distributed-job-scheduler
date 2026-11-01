@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -74,10 +75,26 @@ func (s Secret) GoString() string {
 	return `config.Secret("[REDACTED]")`
 }
 
+// LogValue implements slog.LogValuer, so structured logs never show the value,
+// whichever handler (text or JSON) is used.
+func (s Secret) LogValue() slog.Value {
+	return slog.StringValue(s.String())
+}
+
+// MarshalText implements encoding.TextMarshaler, so encoding/json and other
+// text encoders never show the value either.
+func (s Secret) MarshalText() ([]byte, error) {
+	return []byte(s.String()), nil
+}
+
 // Value returns the real secret value.
 func (s Secret) Value() string {
 	return string(s)
 }
+
+// ErrUnknownService is returned when Load is called with a service name
+// that has no configuration defaults. Callers can check for it with errors.Is.
+var ErrUnknownService = errors.New("unknown service")
 
 // LookupFunc finds an environment variable. os.LookupEnv has this shape,
 // and tests pass a map-based function instead.
@@ -95,7 +112,7 @@ func LoadFrom(service string, lookup LookupFunc) (Config, error) {
 
 	addr, known := defaultHTTPAddr[service]
 	if !known {
-		return Config{}, fmt.Errorf("unknown service %q", service)
+		return Config{}, fmt.Errorf("%w %q", ErrUnknownService, service)
 	}
 
 	cfg := Config{
@@ -128,16 +145,25 @@ func LoadFrom(service string, lookup LookupFunc) (Config, error) {
 	return cfg, nil
 }
 
-// Summary returns a one-line description that is safe to print or log.
-func (c Config) Summary() string {
-	redisPassword := "empty"
-	if c.Redis.Password != "" {
-		redisPassword = "set"
-	}
-	return fmt.Sprintf(
-		"service=%s env=%s log_level=%s http_addr=%s shutdown_timeout=%s mongo_uri=%s mongo_database=%s redis_addr=%s redis_db=%d redis_password=%s",
-		c.Service, c.Env, c.LogLevel, c.HTTPAddr, c.ShutdownTimeout,
-		c.Mongo.SafeURI(), c.Mongo.Database, c.Redis.Addr, c.Redis.DB, redisPassword,
+// LogValue implements slog.LogValuer. It describes the configuration as a
+// group of fields that is safe to log: no secret values, ever.
+// The service name is left out because the logger already adds it to every line.
+func (c Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.String("env", c.Env),
+		slog.String("log_level", c.LogLevel),
+		slog.String("http_addr", c.HTTPAddr),
+		// As text ("15s"): slog's JSON handler would otherwise write nanoseconds.
+		slog.String("shutdown_timeout", c.ShutdownTimeout.String()),
+		slog.Group("mongo",
+			slog.String("uri", c.Mongo.SafeURI()),
+			slog.String("database", c.Mongo.Database),
+		),
+		slog.Group("redis",
+			slog.String("addr", c.Redis.Addr),
+			slog.Int("db", c.Redis.DB),
+			slog.Bool("password_set", c.Redis.Password != ""),
+		),
 	)
 }
 
