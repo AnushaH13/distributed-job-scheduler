@@ -1,7 +1,18 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+
+	"github.com/anushah13/distributed-job-scheduler/internal/config"
+)
 
 func main() {
-	fmt.Println("worker service: starting (placeholder)")
+	cfg, err := config.Load(config.ServiceWorker)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "worker service: invalid configuration:\n%v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println("worker service: configuration loaded:", cfg.Summary())
 }
