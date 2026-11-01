@@ -1,0 +1,16 @@
+# Compiled binaries
+/bin/
+
+# Local environment files (may contain secrets)
+.env
+.env.*
+!.env.example
+
+# Test and coverage output
+coverage.out
+*.test
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
