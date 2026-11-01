@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -80,6 +81,14 @@ func (s Secret) GoString() string {
 func (s Secret) LogValue() slog.Value {
 	return slog.StringValue(s.String())
 }
+
+// Compile-time checks ensure Secret implements these interfaces.
+var (
+	_ fmt.Stringer           = Secret("")
+	_ fmt.GoStringer         = Secret("")
+	_ slog.LogValuer         = Secret("")
+	_ encoding.TextMarshaler = Secret("")
+)
 
 // MarshalText implements encoding.TextMarshaler, so encoding/json and other
 // text encoders never show the value either.
