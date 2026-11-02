@@ -35,14 +35,14 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ShutdownTimeout != 15*time.Second {
 		t.Errorf("ShutdownTimeout = %s, want 15s", cfg.ShutdownTimeout)
 	}
-	if cfg.Mongo.URI.Value() != DefaultMongoURI {
-		t.Errorf("Mongo.URI = %q, want %q", cfg.Mongo.URI.Value(), DefaultMongoURI)
+	if cfg.Mongo.URI.Value() != "mongodb://localhost:27018" {
+		t.Errorf("Mongo.URI = %q, want %q", cfg.Mongo.URI.Value(), "mongodb://localhost:27018")
 	}
 	if cfg.Mongo.Database != "job_scheduler" {
 		t.Errorf("Mongo.Database = %q, want %q", cfg.Mongo.Database, "job_scheduler")
 	}
-	if cfg.Redis.Addr != DefaultRedisAddr || cfg.Redis.DB != 0 {
-		t.Errorf("Redis = %+v, want %s db 0", cfg.Redis, DefaultRedisAddr)
+	if cfg.Redis.Addr != "localhost:6380" || cfg.Redis.DB != 0 {
+		t.Errorf("Redis = %+v, want localhost:6380 db 0", cfg.Redis)
 	}
 }
 
