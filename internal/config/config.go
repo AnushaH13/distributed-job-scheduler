@@ -27,6 +27,12 @@ const (
 	EnvProduction  = "production"
 )
 
+// Local development ports for isolated Docker dependencies.
+const (
+	DefaultMongoURI  = "mongodb://localhost:27018"
+	DefaultRedisAddr = "localhost:6380"
+)
+
 // defaultHTTPAddr gives each service its own port, so all three can run
 // on one laptop at the same time without a port conflict.
 var defaultHTTPAddr = map[string]string{
@@ -131,11 +137,11 @@ func LoadFrom(service string, lookup LookupFunc) (Config, error) {
 		HTTPAddr:        r.addr("HTTP_ADDR", addr),
 		ShutdownTimeout: r.duration("SHUTDOWN_TIMEOUT", 15*time.Second, time.Second, 2*time.Minute),
 		Mongo: MongoConfig{
-			URI:      Secret(r.mongoURI("MONGO_URI", "mongodb://localhost:27017")),
+			URI:      Secret(r.mongoURI("MONGO_URI", DefaultMongoURI)),
 			Database: r.str("MONGO_DATABASE", "job_scheduler"),
 		},
 		Redis: RedisConfig{
-			Addr:     r.addr("REDIS_ADDR", "localhost:6379"),
+			Addr:     r.addr("REDIS_ADDR", DefaultRedisAddr),
 			Password: Secret(r.str("REDIS_PASSWORD", "")),
 			DB:       r.intRange("REDIS_DB", 0, 0, 15),
 		},
