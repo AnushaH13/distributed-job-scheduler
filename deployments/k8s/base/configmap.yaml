@@ -1,0 +1,15 @@
+# Non-secret settings shared by all three services.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: djs-config
+  namespace: djs
+data:
+  APP_ENV: production
+  LOG_LEVEL: info
+  # Must stay below terminationGracePeriodSeconds (30s) minus the preStop sleep (5s).
+  SHUTDOWN_TIMEOUT: 20s
+  MONGO_DATABASE: job_scheduler
+  REDIS_ADDR: redis.djs.svc.cluster.local:6379
+  REDIS_DB: "0"
+  WORKER_CONCURRENCY: "4"

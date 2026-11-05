@@ -1,0 +1,8 @@
+# Local cluster only: kubectl apply -k deployments/k8s/dev-deps
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Kustomize refuses single files outside this folder (../base/namespace.yaml),
+# so this folder has its own copy of the same Namespace.
+resources:
+  - namespace.yaml
+  - dependencies.yaml

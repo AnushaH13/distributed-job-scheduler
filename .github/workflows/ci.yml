@@ -1,0 +1,116 @@
+# CI: format, vet, unit tests, integration tests against real MongoDB and
+# Redis, and a container build. On pushes to main it can also push the image
+# to Amazon ECR, but only when the repository variable AWS_ROLE_ARN is set
+# (keyless login through GitHub OIDC; no AWS keys stored in GitHub).
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.24.12"   # same as the Docker build image
+  GOTOOLCHAIN: local      # fail loudly instead of downloading another Go
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: go.mod must keep go 1.24.0
+        run: grep -qx 'go 1.24.0' go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: go vet
+        run: go vet ./...
+      - name: go mod tidy is clean
+        run: go mod tidy -diff
+      - name: unit tests
+        run: go test -race -count=1 ./...
+
+  kustomize:
+    # Renders every Kustomize directory with the real tool (kubectl's built-in
+    # kustomize, preinstalled on GitHub's Ubuntu runners). Nothing is applied:
+    # `kubectl kustomize` only prints YAML and never contacts a cluster.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: kubectl version
+        run: kubectl version --client
+      - name: kustomize build
+        run: |
+          set -euo pipefail
+          for dir in deployments/k8s/base deployments/k8s/dev-deps deployments/k8s/overlays/eks; do
+            out="$RUNNER_TEMP/$(echo "$dir" | tr / _).yaml"
+            kubectl kustomize "$dir" > "$out"
+            echo "$dir: $(grep -c '^kind:' "$out") objects"
+          done
+
+  integration:
+    runs-on: ubuntu-24.04
+    needs: test
+    services:
+      # Same images and host ports as deployments/compose.deps.yml, so the
+      # tests' default addresses (27018 and 6380) work unchanged.
+      mongo:
+        image: mongo:7.0.45-jammy
+        ports: ["27018:27017"]
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ping:1}).ok'"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:8.8.4-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: integration and end-to-end tests
+        env:
+          DJS_INTEGRATION: "1"
+        run: go test -race -count=1 ./...
+
+  image:
+    runs-on: ubuntu-24.04
+    needs: [test, integration, kustomize]
+    permissions:
+      contents: read
+      id-token: write   # for AWS OIDC login
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: build image
+        run: docker build -f deployments/Dockerfile -t djs:${{ github.sha }} .
+
+      - name: configure AWS credentials (OIDC)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'ap-south-1' }}
+      - name: log in to ECR
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: tag and push
+        if: steps.ecr.outcome == 'success'
+        run: |
+          repo="${{ steps.ecr.outputs.registry }}/djs"
+          docker tag djs:${{ github.sha }} "$repo:${{ github.sha }}"
+          docker push "$repo:${{ github.sha }}"
+          echo "pushed $repo:${{ github.sha }}" >> "$GITHUB_STEP_SUMMARY"

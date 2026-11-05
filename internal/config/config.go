@@ -34,7 +34,7 @@ const (
 )
 
 // defaultHTTPAddr gives each service its own port, so all three can run
-// on one laptop at the same time without a port conflict.
+// on one machine at the same time without a port conflict.
 var defaultHTTPAddr = map[string]string{
 	ServiceAPI:       ":8080",
 	ServiceScheduler: ":8081",
@@ -50,6 +50,7 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Mongo           MongoConfig
 	Redis           RedisConfig
+	Worker          WorkerConfig
 }
 
 // MongoConfig holds MongoDB connection settings.
@@ -63,6 +64,12 @@ type RedisConfig struct {
 	Addr     string
 	Password Secret
 	DB       int
+}
+
+// WorkerConfig holds settings used only by the worker service.
+type WorkerConfig struct {
+	// Concurrency is how many jobs one worker process runs at the same time.
+	Concurrency int
 }
 
 // Secret is a string that never prints its value.
@@ -145,6 +152,9 @@ func LoadFrom(service string, lookup LookupFunc) (Config, error) {
 			Password: Secret(r.str("REDIS_PASSWORD", "")),
 			DB:       r.intRange("REDIS_DB", 0, 0, 15),
 		},
+		Worker: WorkerConfig{
+			Concurrency: r.intRange("WORKER_CONCURRENCY", 4, 1, 256),
+		},
 	}
 
 	// Local defaults point at localhost. In production that is almost
@@ -178,6 +188,9 @@ func (c Config) LogValue() slog.Value {
 			slog.String("addr", c.Redis.Addr),
 			slog.Int("db", c.Redis.DB),
 			slog.Bool("password_set", c.Redis.Password != ""),
+		),
+		slog.Group("worker",
+			slog.Int("concurrency", c.Worker.Concurrency),
 		),
 	)
 }

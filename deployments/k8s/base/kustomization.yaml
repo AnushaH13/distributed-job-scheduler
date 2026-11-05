@@ -1,0 +1,10 @@
+# Apply with: kubectl apply -k deployments/k8s/base
+# (after creating the djs-secrets Secret; see secret.example.yaml)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api.yaml
+  - scheduler.yaml
+  - worker.yaml

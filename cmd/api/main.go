@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log/slog"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/anushah13/distributed-job-scheduler/internal/api"
+	"github.com/anushah13/distributed-job-scheduler/internal/app"
 	"github.com/anushah13/distributed-job-scheduler/internal/config"
-	"github.com/anushah13/distributed-job-scheduler/internal/logging"
+	"github.com/anushah13/distributed-job-scheduler/internal/handlers"
+	"github.com/anushah13/distributed-job-scheduler/internal/services"
 )
 
 func main() {
@@ -19,19 +24,20 @@ func main() {
 // run does the real work and returns an error instead of exiting,
 // so main is the only place that decides how the program ends.
 func run() error {
-	cfg, err := config.Load(config.ServiceAPI)
+	// SIGTERM is what Kubernetes and Docker send; SIGINT is Ctrl+C.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	a, err := app.Start(ctx, config.ServiceAPI)
 	if err != nil {
-		return fmt.Errorf("invalid configuration:\n%w", err)
+		return err
 	}
+	defer a.Close()
 
-	logger, err := logging.New(os.Stdout, cfg)
-	if err != nil {
-		return fmt.Errorf("create logger: %w", err)
-	}
+	// The API never runs jobs, but it validates job types against the same
+	// registry the workers use.
+	registry := handlers.Default(a.Logger)
+	svc := services.NewJobService(a.Store, a.Queue, registry.Has, a.Logger)
 
-	slog.SetDefault(logger)
-
-	logger.Info("service starting", "config", cfg)
-
-	return nil
+	return a.Serve(ctx, api.NewRouter(svc, a.Health, a.Logger), nil)
 }

@@ -1,0 +1,58 @@
+# The three services, built from this repository. Use together with
+# compose.deps.yml (same project "djs"), so only this project's containers,
+# network and volumes are affected:
+#
+#   docker compose -f deployments/compose.deps.yml -f deployments/compose.app.yml up -d --build
+#   docker compose -f deployments/compose.deps.yml -f deployments/compose.app.yml ps
+#   docker compose -f deployments/compose.deps.yml -f deployments/compose.app.yml down
+#
+# Inside the Compose network the services reach MongoDB and Redis by service
+# name on their container ports (mongo:27017, redis:6379). That 27017 is the
+# container's port on the djs_default network, not the host's port 27017.
+
+x-service: &service
+  image: djs:dev
+  build:
+    context: ..
+    dockerfile: deployments/Dockerfile
+  environment: &env
+    APP_ENV: production
+    LOG_LEVEL: info
+    SHUTDOWN_TIMEOUT: 20s
+    MONGO_URI: mongodb://mongo:27017
+    MONGO_DATABASE: job_scheduler
+    REDIS_ADDR: redis:6379
+  depends_on:
+    mongo:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  # Docker waits this long after SIGTERM before SIGKILL; it must exceed
+  # SHUTDOWN_TIMEOUT so the services can finish gracefully.
+  stop_grace_period: 25s
+  mem_limit: 128m
+  read_only: true
+  restart: unless-stopped
+
+services:
+  api:
+    <<: *service
+    entrypoint: ["/usr/local/bin/api"]
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  scheduler:
+    <<: *service
+    entrypoint: ["/usr/local/bin/scheduler"]
+    # Two replicas show leader election: only one moves jobs at a time.
+    deploy:
+      replicas: 2
+
+  worker:
+    <<: *service
+    entrypoint: ["/usr/local/bin/worker"]
+    environment:
+      <<: *env
+      WORKER_CONCURRENCY: "4"
+    deploy:
+      replicas: 2

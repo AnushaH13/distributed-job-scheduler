@@ -1,0 +1,35 @@
+# eksctl cluster definition. NOT created by any script in this repository.
+# Read docs/deploy-eks.md (costs!) before running:
+#
+#   eksctl create cluster -f deployments/eks/cluster.yaml
+#   eksctl delete cluster -f deployments/eks/cluster.yaml   # stops the charges
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: djs-learning
+  region: ap-south-1        # Mumbai, closest to IST; check prices for your region
+  # No version pinned: eksctl uses its current default. Before creating, check
+  # https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions.html
+  # and pin a version in *standard* support (extended support costs 6x).
+
+# Two zones are the minimum EKS accepts and enough to show zone spreading.
+availabilityZones: ["ap-south-1a", "ap-south-1b"]
+
+vpc:
+  nat:
+    # One NAT gateway instead of one per zone: cheaper, less resilient.
+    gateway: Single
+
+iam:
+  withOIDC: true            # lets pods and GitHub Actions use IAM roles, no static keys
+
+managedNodeGroups:
+  - name: general
+    instanceType: t3.medium # 2 vCPU, 4 GiB: fits the whole system with room to spare
+    minSize: 2
+    desiredCapacity: 2
+    maxSize: 4
+    volumeSize: 20
+    privateNetworking: true # nodes get no public IPs
+    labels: {workload: general}

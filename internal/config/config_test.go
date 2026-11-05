@@ -44,6 +44,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Redis.Addr != "localhost:6380" || cfg.Redis.DB != 0 {
 		t.Errorf("Redis = %+v, want localhost:6380 db 0", cfg.Redis)
 	}
+	if cfg.Worker.Concurrency != 4 {
+		t.Errorf("Worker.Concurrency = %d, want 4", cfg.Worker.Concurrency)
+	}
 }
 
 func TestDefaultHTTPAddrPerService(t *testing.T) {
@@ -127,6 +130,8 @@ func TestLoadRangeChecks(t *testing.T) {
 		{"port zero", "HTTP_ADDR", ":0"},
 		{"port too high", "HTTP_ADDR", ":70000"},
 		{"unknown env", "APP_ENV", "staging"},
+		{"worker concurrency zero", "WORKER_CONCURRENCY", "0"},
+		{"worker concurrency too high", "WORKER_CONCURRENCY", "257"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

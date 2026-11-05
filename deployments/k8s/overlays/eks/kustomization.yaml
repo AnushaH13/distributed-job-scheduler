@@ -1,0 +1,17 @@
+# EKS: same manifests, image from Amazon ECR. CI sets newTag to the Git SHA:
+#   cd deployments/k8s/overlays/eks && kustomize edit set image djs=<ecr-repo>:<sha>
+# MongoDB and Redis are managed services, so dev-deps is not included.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: djs
+    newName: ACCOUNT_ID.dkr.ecr.ap-south-1.amazonaws.com/djs
+    newTag: REPLACE_WITH_GIT_SHA
+patches:
+  - target: {kind: ConfigMap, name: djs-config}
+    patch: |-
+      - op: replace
+        path: /data/REDIS_ADDR
+        value: REPLACE_WITH_ELASTICACHE_ENDPOINT:6379

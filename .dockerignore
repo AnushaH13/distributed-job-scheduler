@@ -1,0 +1,11 @@
+# Keep secrets, Git history and editor files out of the build context.
+.git
+.env
+.env.*
+.vscode
+.idea
+bin
+coverage.out
+*.test
+docs
+deployments/k8s

@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: djs
+  labels: {app.kubernetes.io/name: djs, app.kubernetes.io/component: worker}
+spec:
+  replicas: 3
+  selector:
+    matchLabels: {app.kubernetes.io/name: djs, app.kubernetes.io/component: worker}
+  strategy:
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: djs, app.kubernetes.io/component: worker}
+    spec:
+      # Kubernetes sends SIGTERM, waits this long, then SIGKILL.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        # Spread replicas across zones so one zone outage leaves the rest running.
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {app.kubernetes.io/name: djs, app.kubernetes.io/component: worker}
+      containers:
+        - name: worker
+          image: djs:dev
+          command: ["/usr/local/bin/worker"]
+          ports:
+            - {name: http, containerPort: 8082}
+          env:
+            - {name: HTTP_ADDR, value: ":8082"}
+
+          envFrom:
+            - configMapRef: {name: djs-config}
+            - secretRef: {name: djs-secrets}
+          # Liveness: is the process alive? Never checks MongoDB or Redis, so
+          # a database outage does not restart every pod at once.
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness: should this pod get traffic? Fails while a dependency
+          # is down or while the pod is shutting down.
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+            periodSeconds: 5
+            failureThreshold: 2
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 2
+            failureThreshold: 15
+          lifecycle:
+            # Give load balancers time to stop routing here before shutdown
+            # starts (native sleep action; no shell needed in distroless).
+            preStop:
+              sleep: {seconds: 5}
+          resources:
+            requests: {cpu: 200m, memory: 128Mi}
+            limits: {memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+---
+# CPU-based scaling is a simple start. Scaling on the length of the Redis
+# ready list (for example with KEDA's Redis scaler) reacts to the real
+# backlog and is the better choice once the queue is busy.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: worker
+  namespace: djs
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: worker}
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: {type: Utilization, averageUtilization: 70}
+  behavior:
+    scaleDown:
+      # Scale down slowly: each removed worker must finish or hand back its jobs.
+      stabilizationWindowSeconds: 300
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: worker
+  namespace: djs
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: djs, app.kubernetes.io/component: worker}

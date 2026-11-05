@@ -5,9 +5,8 @@ services:
   mongo:
     # MongoDB 7.0 uses the legacy TCMalloc per-thread cache.
     # MongoDB 8.0+ introduced per-CPU caches affected by the rseq
-    # incompatibility on Linux 6.19+ and 7.0.0–7.0.13.
-    # This laptop runs kernel 7.0.0-38-generic. Re-check compatibility
-    # before upgrading the MongoDB image.
+    # incompatibility on Linux kernel 6.19 and newer. Re-check compatibility
+    # with the host kernel before upgrading the MongoDB image.
     image: mongo:7.0.45-jammy
     command: ["mongod", "--wiredTigerCacheSizeGB", "0.25"]
     ports:

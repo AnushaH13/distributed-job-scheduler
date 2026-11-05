@@ -1,12 +1,21 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/anushah13/distributed-job-scheduler/internal/app"
 	"github.com/anushah13/distributed-job-scheduler/internal/config"
-	"github.com/anushah13/distributed-job-scheduler/internal/logging"
+	"github.com/anushah13/distributed-job-scheduler/internal/idgen"
+	"github.com/anushah13/distributed-job-scheduler/internal/lifecycle"
+	"github.com/anushah13/distributed-job-scheduler/internal/locks"
+	"github.com/anushah13/distributed-job-scheduler/internal/middleware"
+	"github.com/anushah13/distributed-job-scheduler/internal/scheduler"
+	"github.com/anushah13/distributed-job-scheduler/pkg/backoff"
 )
 
 func main() {
@@ -17,17 +26,28 @@ func main() {
 }
 
 func run() error {
-	cfg, err := config.Load(config.ServiceScheduler)
-	if err != nil {
-		return fmt.Errorf("invalid configuration:\n%w", err)
-	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	logger, err := logging.New(os.Stdout, cfg)
+	a, err := app.Start(ctx, config.ServiceScheduler)
 	if err != nil {
-		return fmt.Errorf("create logger: %w", err)
+		return err
 	}
-	slog.SetDefault(logger)
+	defer a.Close()
 
-	logger.Info("service starting", "config", cfg)
-	return nil
+	host, _ := os.Hostname()
+	instanceID := host + "-" + idgen.Token()[:8]
+
+	lc := lifecycle.New(a.Store, a.Queue, backoff.Default, a.Logger)
+	sched := scheduler.New(a.Store, a.Queue, lc, a.Logger, scheduler.Options{})
+	elector := locks.NewElector(a.Redis.Redis(), a.Queue.Prefix()+"leader", instanceID, a.Store.Leases, a.Logger, locks.Options{})
+
+	// Every replica runs the elector; only the leader runs sched.Lead.
+	mux := http.NewServeMux()
+	a.Health.Register(mux)
+	handler := middleware.Chain(mux, middleware.RequestID, middleware.Logger(a.Logger))
+
+	return a.Serve(ctx, handler, func(ctx context.Context) error {
+		return elector.Run(ctx, sched.Lead)
+	})
 }

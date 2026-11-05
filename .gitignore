@@ -14,3 +14,7 @@ coverage.out
 .vscode/
 .idea/
 .DS_Store
+
+# Private learning notes (kept locally, never published)
+/CLAUDE.md
+/docs/PROJECT_HANDOFF.md
