@@ -31,7 +31,10 @@ jobs:
       - name: go.mod must keep go 1.24.0
         run: grep -qx 'go 1.24.0' go.mod
       - name: gofmt
-        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+        # vendor/ is third-party code kept byte-identical to upstream; don't format-check it.
+        run: |
+          files=$(gofmt -l $(git ls-files '*.go' | grep -v '^vendor/'))
+          test -z "$files" || { echo "$files"; exit 1; }
       - name: go vet
         run: go vet ./...
       - name: go mod tidy is clean

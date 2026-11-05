@@ -10,7 +10,8 @@ COMPOSE_ALL  := $(COMPOSE_DEPS) -f deployments/compose.app.yml
 check: fmt vet test            ## everything CI's first job runs
 
 fmt:
-	@test -z "$$(gofmt -l .)" || { gofmt -l .; echo "run: gofmt -w ."; exit 1; }
+	@files=$$(gofmt -l $$(git ls-files '*.go' | grep -v '^vendor/')); \
+	test -z "$$files" || { echo "$$files"; echo "run: gofmt -w <file>"; exit 1; }
 
 vet:
 	go vet ./...
